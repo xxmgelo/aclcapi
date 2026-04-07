@@ -81,6 +81,20 @@ function target_table_for_program($program)
     return null;
 }
 
+function parse_can_remind_value($value)
+{
+    if (is_bool($value)) {
+        return $value ? 1 : 0;
+    }
+
+    $normalized = strtolower(trim((string)$value));
+    if ($normalized === "1" || $normalized === "true" || $normalized === "yes") {
+        return 1;
+    }
+
+    return 0;
+}
+
 if ($method === "GET") {
     $student_id = trim((string)($_GET["student_id"] ?? ""));
     $id = (int)($_GET["id"] ?? 0);
@@ -115,6 +129,7 @@ if ($method === "PUT") {
     $program = trim((string)($data["Program"] ?? ""));
     $year_level = trim((string)($data["YearLevel"] ?? ""));
     $gmail = trim((string)($data["Gmail"] ?? ""));
+    $financials = normalized_student_financials($data);
 
     $target = target_table_for_program($program);
     if (!$target) {
@@ -127,6 +142,10 @@ if ($method === "PUT") {
     }
 
     $currentTable = $record["table"];
+    $incoming_can_remind = $data["CanRemind"] ?? $data["can_remind"] ?? null;
+    $can_remind = ($incoming_can_remind === null || $incoming_can_remind === "")
+        ? (int)($record["row"]["can_remind"] ?? 0)
+        : parse_can_remind_value($incoming_can_remind);
 
     if ($currentTable !== $target) {
         $deleteStmt = $db->prepare("DELETE FROM {$currentTable} WHERE student_id = ?");
@@ -137,13 +156,33 @@ if ($method === "PUT") {
         }
 
         $insertStmt = $db->prepare(
-            "INSERT INTO {$target} (student_id, name, program, year_level, gmail)
-             VALUES (?, ?, ?, ?, ?)"
+            "INSERT INTO {$target}
+            (student_id, name, program, year_level, gmail, total_fee, base_total_fee, discount_percent, downpayment, prelim, midterm, pre_final, finals, total_balance, payment_mode, full_payment_amount, can_remind)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         if (!$insertStmt) {
             respond(["error" => "Failed to move student"], 500);
         }
-        $insertStmt->bind_param("sssss", $student_id, $name, $program, $year_level, $gmail);
+        $insertStmt->bind_param(
+            "sssssdddddddddsdi",
+            $student_id,
+            $name,
+            $program,
+            $year_level,
+            $gmail,
+            $financials["total_fee"],
+            $financials["base_total_fee"],
+            $financials["discount_percent"],
+            $financials["downpayment"],
+            $financials["prelim"],
+            $financials["midterm"],
+            $financials["pre_final"],
+            $financials["finals"],
+            $financials["total_balance"],
+            $financials["payment_mode"],
+            $financials["full_payment_amount"],
+            $can_remind
+        );
         if (!$insertStmt->execute()) {
             respond(["error" => "Failed to move student", "details" => $insertStmt->error], 500);
         }
@@ -151,7 +190,10 @@ if ($method === "PUT") {
     } else {
         $stmt = $db->prepare(
             "UPDATE {$currentTable}
-             SET name = ?, program = ?, year_level = ?, gmail = ?
+             SET name = ?, program = ?, year_level = ?, gmail = ?,
+                 total_fee = ?, base_total_fee = ?, discount_percent = ?,
+                 downpayment = ?, prelim = ?, midterm = ?, pre_final = ?, finals = ?,
+                 total_balance = ?, payment_mode = ?, full_payment_amount = ?, can_remind = ?
              WHERE student_id = ?"
         );
 
@@ -160,11 +202,23 @@ if ($method === "PUT") {
         }
 
         $stmt->bind_param(
-            "sssss",
+            "ssssdddddddddsdis",
             $name,
             $program,
             $year_level,
             $gmail,
+            $financials["total_fee"],
+            $financials["base_total_fee"],
+            $financials["discount_percent"],
+            $financials["downpayment"],
+            $financials["prelim"],
+            $financials["midterm"],
+            $financials["pre_final"],
+            $financials["finals"],
+            $financials["total_balance"],
+            $financials["payment_mode"],
+            $financials["full_payment_amount"],
+            $can_remind,
             $student_id
         );
 
