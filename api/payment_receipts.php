@@ -221,7 +221,7 @@ function build_payment_receipt_html(
     ";
 }
 
-function inline_notification_assets_receipt($html)
+function inline_notification_assets_receipt($mail, $html)
 {
     $asset_dir = __DIR__ . "/email_assets";
     $assets = ["aclclogo.png", "remindernotif.png", "receivednotif.png"];
@@ -251,9 +251,17 @@ function inline_notification_assets_receipt($html)
             $mime = "image/webp";
         }
 
-        $data_uri = "data:" . $mime . ";base64," . base64_encode($binary);
-        $pattern = '/src=(["\'])[^"\']*' . preg_quote($file_name, '/') . '[^"\']*\1/i';
-        $html = preg_replace($pattern, 'src="' . $data_uri . '"', $html);
+        try {
+            $cid = preg_replace('/[^a-z0-9_.-]/i', '_', $file_name);
+            $mail->addStringEmbeddedImage($binary, $cid, $file_name, 'base64', $mime);
+            $pattern = '/src=(["\'])[^"\']*' . preg_quote($file_name, '/') . '[^"\']*\1/i';
+            $html = preg_replace($pattern, 'src="cid:' . $cid . '"', $html);
+        } catch (Exception $e) {
+            // if embedding fails, fallback to data URI
+            $data_uri = "data:" . $mime . ";base64," . base64_encode($binary);
+            $pattern = '/src=(["\'])[^"\']*' . preg_quote($file_name, '/') . '[^"\']*\1/i';
+            $html = preg_replace($pattern, 'src="' . $data_uri . '"', $html);
+        }
     }
 
     return $html;
@@ -307,7 +315,7 @@ try {
             $stage_amount_remaining,
             $stage_guidance
         );
-    $mail->Body = inline_notification_assets_receipt($resolved_html);
+    $mail->Body = inline_notification_assets_receipt($mail, $resolved_html);
     $mail->AltBody = $message;
 
     $mail->send();

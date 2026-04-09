@@ -58,4 +58,8 @@ CREATE TABLE IF NOT EXISTS bsis_students (
   UNIQUE KEY uniq_bsis_student_id (student_id)
 );
 
+-- Update existing admin name if present (change Bebén Magbanua to Ms. Amy Alpay)
+-- Run this after importing or against your live database if the admin row already exists.
+UPDATE admins SET full_name = 'Ms. Amy Alpay' WHERE full_name LIKE '%BEBEN%' OR full_name LIKE '%Magbanua%';
+
 

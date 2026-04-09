@@ -208,22 +208,31 @@ function build_reminder_html($student_name, $student_id, $message, $financials)
     return "
         <div style=\"font-family:Arial,Helvetica,sans-serif;background:#f7fafc;padding:24px;\">
             <div style=\"max-width:640px;margin:0 auto;background:#ffffff;border-radius:16px;border:1px solid #e2e8f0;overflow:hidden;\">
-                <div style=\"padding:24px;background:linear-gradient(135deg,#155EEF,#0F766E);color:#ffffff;\">
+                <div style=\"padding:24px;background:linear-gradient(135deg,#155EEF,#0F766E);color:#ffffff;text-align:center;\">
+                    <img src=\"aclclogo.png\" alt=\"ACLC\" style=\"height:40px;margin:0 auto 8px;display:block;\" />
                     <h2 style=\"margin:0 0 8px;\">Payment Reminder</h2>
                     <p style=\"margin:0;font-size:14px;opacity:0.92;\">ACLC Fee Management System</p>
                 </div>
                 <div style=\"padding:24px;color:#0f172a;\">
-                    <p style=\"margin:0 0 16px;\"><strong>Student:</strong> " . htmlspecialchars($student_name, ENT_QUOTES, "UTF-8") . "</p>
-                    <p style=\"margin:0 0 16px;\"><strong>Student ID:</strong> " . htmlspecialchars($student_id, ENT_QUOTES, "UTF-8") . "</p>
-                    <p style=\"margin:0 0 16px;\"><strong>Outstanding Balance:</strong> PHP " . number_format((float)$financials["total_balance"], 2) . "</p>
+                    <div style=\"margin:0 0 18px;padding:14px;border-radius:10px;background:#eef6ff;border:1px solid #bfd9ff;\">
+                        <p style=\"margin:0 0 8px;\"><strong>Student Name:</strong> " . htmlspecialchars($student_name, ENT_QUOTES, "UTF-8") . "</p>
+                        <p style=\"margin:0 0 8px;\"><strong>Student ID:</strong> " . htmlspecialchars($student_id, ENT_QUOTES, "UTF-8") . "</p>
+                        <p style=\"margin:0;\"><strong>Outstanding Balance:</strong> PHP " . number_format((float)$financials["total_balance"], 2) . "</p>
+                    </div>
                     " . implode("", $htmlParagraphs) . "
+                    <p style=\"margin:0 0 12px;\">Thank you.</p>
+                </div>
+                <div style=\"padding:18px 24px 28px;color:#6b7280;text-align:center;border-top:1px solid #e6eef8;\">
+                    <img src=\"receivednotif.png\" alt=\"ACLC\" style=\"height:28px;margin:0 auto 8px;display:block;\" />
+                    <strong style=\"display:block;color:#0f172a;margin-bottom:6px;\">ACLC Fee Management System</strong>
+                    <div style=\"font-size:12px;opacity:0.8;\">This is a system-generated notification. For payment verification, please contact the accounting office.</div>
                 </div>
             </div>
         </div>
     ";
 }
 
-function inline_notification_assets_reminder($html)
+function inline_notification_assets_reminder($mail, $html)
 {
     $asset_dir = __DIR__ . "/email_assets";
     $assets = ["aclclogo.png", "remindernotif.png", "receivednotif.png"];
@@ -253,9 +262,16 @@ function inline_notification_assets_reminder($html)
             $mime = "image/webp";
         }
 
-        $data_uri = "data:" . $mime . ";base64," . base64_encode($binary);
-        $pattern = '/src=(["\'])[^"\']*' . preg_quote($file_name, '/') . '[^"\']*\1/i';
-        $html = preg_replace($pattern, 'src="' . $data_uri . '"', $html);
+        try {
+            $cid = preg_replace('/[^a-z0-9_.-]/i', '_', $file_name);
+            $mail->addStringEmbeddedImage($binary, $cid, $file_name, 'base64', $mime);
+            $pattern = '/src=(["\'])[^"\']*' . preg_quote($file_name, '/') . '[^"\']*\1/i';
+            $html = preg_replace($pattern, 'src="cid:' . $cid . '"', $html);
+        } catch (Exception $e) {
+            $data_uri = "data:" . $mime . ";base64," . base64_encode($binary);
+            $pattern = '/src=(["\'])[^"\']*' . preg_quote($file_name, '/') . '[^"\']*\1/i';
+            $html = preg_replace($pattern, 'src="' . $data_uri . '"', $html);
+        }
     }
 
     return $html;
@@ -302,7 +318,7 @@ try {
     $resolved_html = $html !== ""
         ? $html
         : build_reminder_html($student_name, $student_id, $message, $financials);
-    $mail->Body = inline_notification_assets_reminder($resolved_html);
+    $mail->Body = inline_notification_assets_reminder($mail, $resolved_html);
     $mail->AltBody = $message;
 
     $mail->send();
