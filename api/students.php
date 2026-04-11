@@ -23,7 +23,58 @@ function fetch_all_students($db)
     return $rows;
 }
 
-function insert_program_student($db, $program, $student_id, $name, $year_level, $gmail, $financials)
+function fetch_basic_students($db)
+{
+    $sql = "SELECT student_id, name, program, year_level, gmail FROM bse_students
+            UNION ALL
+            SELECT student_id, name, program, year_level, gmail FROM bsis_students
+            ORDER BY student_id DESC";
+    $result = $db->query($sql);
+    if (!$result) {
+        respond(["error" => "Failed to fetch students"], 500);
+    }
+
+    $rows = [];
+    while ($row = $result->fetch_assoc()) {
+        $rows[] = [
+            "StudentID" => $row["student_id"],
+            "Name" => $row["name"],
+            "Program" => $row["program"],
+            "YearLevel" => $row["year_level"],
+            "Gmail" => $row["gmail"],
+        ];
+    }
+
+    return $rows;
+}
+
+function find_student_by_gmail($db, $gmail)
+{
+    if ($gmail === "") {
+        return null;
+    }
+
+    $stmt = $db->prepare(
+        "SELECT student_id, name, program, gmail FROM bse_students WHERE LOWER(TRIM(gmail)) = LOWER(TRIM(?))
+         UNION ALL
+         SELECT student_id, name, program, gmail FROM bsis_students WHERE LOWER(TRIM(gmail)) = LOWER(TRIM(?))
+         LIMIT 1"
+    );
+
+    if (!$stmt) {
+        respond(["error" => "Failed to validate Gmail uniqueness", "details" => $db->error], 500);
+    }
+
+    $stmt->bind_param("ss", $gmail, $gmail);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    $stmt->close();
+
+    return $row ?: null;
+}
+
+function insert_program_student($db, $program, $student_id, $name, $year_level, $gmail)
 {
     $program_value = strtolower($program);
     $target = null;
@@ -40,35 +91,50 @@ function insert_program_student($db, $program, $student_id, $name, $year_level, 
 
     $stmt = $db->prepare(
         "INSERT INTO {$target}
-        (student_id, name, program, year_level, gmail, total_fee, base_total_fee, discount_percent, downpayment, prelim, midterm, pre_final, finals, total_balance, payment_mode, full_payment_amount)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        (student_id, name, program, year_level, gmail, total_fee, base_total_fee, discount_percent, downpayment, prelim, midterm, pre_final, finals, total_balance, payment_mode, full_payment_amount, can_remind)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
 
     if (!$stmt) {
         respond(["error" => "Failed to prepare insert"], 500);
     }
 
+    $total_fee = 0.0;
+    $base_total_fee = 0.0;
+    $discount_percent = 0.0;
+    $downpayment = 0.0;
+    $prelim = 0.0;
+    $midterm = 0.0;
+    $pre_final = 0.0;
+    $finals = 0.0;
+    $total_balance = 0.0;
+    $payment_mode = "installment";
+    $full_payment_amount = 0.0;
+    $can_remind = 0;
+
     $stmt->bind_param(
-        "sssssdddddddddsd",
+        "sssssdddddddddsdi",
         $student_id,
         $name,
         $program,
         $year_level,
         $gmail,
-        $financials["total_fee"],
-        $financials["base_total_fee"],
-        $financials["discount_percent"],
-        $financials["downpayment"],
-        $financials["prelim"],
-        $financials["midterm"],
-        $financials["pre_final"],
-        $financials["finals"],
-        $financials["total_balance"],
-        $financials["payment_mode"],
-        $financials["full_payment_amount"]
+        $total_fee,
+        $base_total_fee,
+        $discount_percent,
+        $downpayment,
+        $prelim,
+        $midterm,
+        $pre_final,
+        $finals,
+        $total_balance,
+        $payment_mode,
+        $full_payment_amount,
+        $can_remind
     );
 
     if (!$stmt->execute()) {
+        error_log("students.php insert failed: " . $stmt->error);
         respond(["error" => "Failed to create student", "details" => $stmt->error], 500);
     }
 
@@ -85,6 +151,11 @@ function insert_program_student($db, $program, $student_id, $name, $year_level, 
 }
 
 if ($method === "GET") {
+    $fields = trim((string)($_GET["fields"] ?? ""));
+    if ($fields === "basic") {
+        respond(fetch_basic_students($db));
+    }
+
     respond(fetch_all_students($db));
 }
 
@@ -104,9 +175,12 @@ if ($method === "POST") {
     $program = trim((string)($data["Program"] ?? ""));
     $year_level = trim((string)($data["YearLevel"] ?? ""));
     $gmail = trim((string)($data["Gmail"] ?? ""));
-    $financials = normalized_student_financials($data);
 
-    insert_program_student($db, $program, $student_id, $name, $year_level, $gmail, $financials);
+    if ($gmail !== "" && find_student_by_gmail($db, $gmail)) {
+        respond(["error" => "This Gmail account is already assigned to another student"], 422);
+    }
+
+    insert_program_student($db, $program, $student_id, $name, $year_level, $gmail);
 }
 
 function target_table_for_program($db, $program)
@@ -191,14 +265,16 @@ if ($method === "PUT") {
 
         $insertStmt = $db->prepare(
             "INSERT INTO {$target}
-            (student_id, name, program, year_level, gmail, total_fee, base_total_fee, discount_percent, downpayment, prelim, midterm, pre_final, finals, total_balance, payment_mode, full_payment_amount)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            (student_id, name, program, year_level, gmail, total_fee, base_total_fee, discount_percent, downpayment, prelim, midterm, pre_final, finals, total_balance, payment_mode, full_payment_amount,
+             downpayment_date, prelim_date, midterm_date, prefinal_date, final_date, total_balance_date,
+             downpayment_paid_amount, prelim_paid_amount, midterm_paid_amount, prefinal_paid_amount, final_paid_amount, total_balance_paid_amount)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         if (!$insertStmt) {
             respond(["error" => "Failed to move student"], 500);
         }
         $insertStmt->bind_param(
-            "sssssdddddddddsd",
+            "sssssdddddddddsdssssssssssss",
             $student_id,
             $name,
             $program,
@@ -214,7 +290,19 @@ if ($method === "PUT") {
             $financials["finals"],
             $financials["total_balance"],
             $financials["payment_mode"],
-            $financials["full_payment_amount"]
+            $financials["full_payment_amount"],
+            $data["downpayment_date"] ?? null,
+            $data["prelim_date"] ?? null,
+            $data["midterm_date"] ?? null,
+            $data["prefinal_date"] ?? null,
+            $data["final_date"] ?? null,
+            $data["total_balance_date"] ?? null,
+            $data["downpayment_paid_amount"] ?? null,
+            $data["prelim_paid_amount"] ?? null,
+            $data["midterm_paid_amount"] ?? null,
+            $data["prefinal_paid_amount"] ?? null,
+            $data["final_paid_amount"] ?? null,
+            $data["total_balance_paid_amount"] ?? null
         );
         if (!$insertStmt->execute()) {
             respond(["error" => "Failed to move student", "details" => $insertStmt->error], 500);
@@ -226,7 +314,9 @@ if ($method === "PUT") {
              SET name = ?, program = ?, year_level = ?, gmail = ?,
                  total_fee = ?, base_total_fee = ?, discount_percent = ?,
                  downpayment = ?, prelim = ?, midterm = ?, pre_final = ?, finals = ?,
-                 total_balance = ?, payment_mode = ?, full_payment_amount = ?
+                 total_balance = ?, payment_mode = ?, full_payment_amount = ?, can_remind = ?,
+                 downpayment_date = ?, prelim_date = ?, midterm_date = ?, prefinal_date = ?, final_date = ?, total_balance_date = ?,
+                 downpayment_paid_amount = ?, prelim_paid_amount = ?, midterm_paid_amount = ?, prefinal_paid_amount = ?, final_paid_amount = ?, total_balance_paid_amount = ?
              WHERE student_id = ?"
         );
 
@@ -235,7 +325,7 @@ if ($method === "PUT") {
         }
 
         $stmt->bind_param(
-            "ssssdddddddddsds",
+            "ssssdddddddddsdiissssssssssss",
             $name,
             $program,
             $year_level,
@@ -251,6 +341,19 @@ if ($method === "PUT") {
             $financials["total_balance"],
             $financials["payment_mode"],
             $financials["full_payment_amount"],
+            isset($data["CanRemind"]) ? ((int)$data["CanRemind"] === 1 ? 1 : 0) : (int)($record["row"]["can_remind"] ?? 0),
+            $data["downpayment_date"] ?? null,
+            $data["prelim_date"] ?? null,
+            $data["midterm_date"] ?? null,
+            $data["prefinal_date"] ?? null,
+            $data["final_date"] ?? null,
+            $data["total_balance_date"] ?? null,
+            $data["downpayment_paid_amount"] ?? null,
+            $data["prelim_paid_amount"] ?? null,
+            $data["midterm_paid_amount"] ?? null,
+            $data["prefinal_paid_amount"] ?? null,
+            $data["final_paid_amount"] ?? null,
+            $data["total_balance_paid_amount"] ?? null,
             $student_id
         );
 

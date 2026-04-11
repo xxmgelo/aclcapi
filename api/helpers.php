@@ -208,5 +208,28 @@ function map_student_row($row)
         "PaymentMode" => $financials["payment_mode"],
         "FullPaymentAmount" => $financials["full_payment_amount"],
         "CanRemind" => isset($row["can_remind"]) ? ((int)$row["can_remind"] === 1) : false,
+        "downpayment_date" => $row["downpayment_date"] ?? null,
+        "prelim_date" => $row["prelim_date"] ?? null,
+        "midterm_date" => $row["midterm_date"] ?? null,
+        "prefinal_date" => $row["prefinal_date"] ?? null,
+        "final_date" => $row["final_date"] ?? null,
+        "total_balance_date" => $row["total_balance_date"] ?? null,
+        "downpayment_paid_amount" => isset($row["downpayment_paid_amount"]) ? (float)$row["downpayment_paid_amount"] : null,
+        "prelim_paid_amount" => isset($row["prelim_paid_amount"]) ? (float)$row["prelim_paid_amount"] : null,
+        "midterm_paid_amount" => isset($row["midterm_paid_amount"]) ? (float)$row["midterm_paid_amount"] : null,
+        "prefinal_paid_amount" => isset($row["prefinal_paid_amount"]) ? (float)$row["prefinal_paid_amount"] : null,
+        "final_paid_amount" => isset($row["final_paid_amount"]) ? (float)$row["final_paid_amount"] : null,
+        "total_balance_paid_amount" => isset($row["total_balance_paid_amount"]) ? (float)$row["total_balance_paid_amount"] : null,
+    ];
+}
+
+function map_basic_student_row($row)
+{
+    return [
+        "StudentID" => $row["student_id"],
+        "Name" => $row["name"],
+        "Program" => $row["program"],
+        "YearLevel" => $row["year_level"],
+        "Gmail" => $row["gmail"],
     ];
 }

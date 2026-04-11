@@ -53,6 +53,18 @@ function ensure_student_fee_schema($mysqli, $database_name, $table)
         "payment_mode" => "VARCHAR(20) NOT NULL DEFAULT 'installment'",
         "full_payment_amount" => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
         "can_remind" => "TINYINT(1) NOT NULL DEFAULT 0",
+        "downpayment_date" => "DATETIME NULL",
+        "prelim_date" => "DATETIME NULL",
+        "midterm_date" => "DATETIME NULL",
+        "prefinal_date" => "DATETIME NULL",
+        "final_date" => "DATETIME NULL",
+        "total_balance_date" => "DATETIME NULL",
+        "downpayment_paid_amount" => "DECIMAL(10,2) NULL",
+        "prelim_paid_amount" => "DECIMAL(10,2) NULL",
+        "midterm_paid_amount" => "DECIMAL(10,2) NULL",
+        "prefinal_paid_amount" => "DECIMAL(10,2) NULL",
+        "final_paid_amount" => "DECIMAL(10,2) NULL",
+        "total_balance_paid_amount" => "DECIMAL(10,2) NULL",
     ];
 
     foreach ($columns as $column => $definition) {
