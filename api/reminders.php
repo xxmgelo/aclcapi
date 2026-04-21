@@ -120,9 +120,15 @@ function value_or_default($array, $key, $default = "")
 function find_student_for_mail_reminder($db, $student_id, $program_hint = "")
 {
     $stmt = $db->prepare(
-        "SELECT 'bse_students' AS source_table, student_id, name, program, gmail, can_remind FROM bse_students WHERE student_id = ?
+        "SELECT 'bse_students' AS source_table, bse_students.student_id, bse_students.name, bse_students.program, bse_students.gmail, COALESCE(student_financials.can_remind, 0) AS can_remind
+         FROM bse_students
+         LEFT JOIN student_financials ON student_financials.student_id = bse_students.student_id
+         WHERE bse_students.student_id = ?
          UNION ALL
-         SELECT 'bsis_students' AS source_table, student_id, name, program, gmail, can_remind FROM bsis_students WHERE student_id = ?"
+         SELECT 'bsis_students' AS source_table, bsis_students.student_id, bsis_students.name, bsis_students.program, bsis_students.gmail, COALESCE(student_financials.can_remind, 0) AS can_remind
+         FROM bsis_students
+         LEFT JOIN student_financials ON student_financials.student_id = bsis_students.student_id
+         WHERE bsis_students.student_id = ?"
     );
 
     if (!$stmt) {
@@ -157,17 +163,17 @@ function find_student_for_mail_reminder($db, $student_id, $program_hint = "")
 
 function set_can_remind_flag_after_send($db, $source_table, $student_id, $value)
 {
-    if (!in_array($source_table, ["bse_students", "bsis_students"], true)) {
-        return false;
-    }
-
-    $stmt = $db->prepare("UPDATE {$source_table} SET can_remind = ? WHERE student_id = ?");
+    $stmt = $db->prepare(
+        "INSERT INTO student_financials (student_id, can_remind)
+         VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE can_remind = VALUES(can_remind)"
+    );
     if (!$stmt) {
         return false;
     }
 
     $flag = (int)$value;
-    $stmt->bind_param("is", $flag, $student_id);
+    $stmt->bind_param("si", $student_id, $flag);
     $ok = $stmt->execute();
     $stmt->close();
     return $ok;
