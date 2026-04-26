@@ -428,6 +428,14 @@ function find_student_by_details($db, $data)
         }
     }
 
+    $original_student_id = trim((string)first_student_value($data, ["OriginalStudentID", "original_student_id"]));
+    if ($original_student_id !== "") {
+        $record = find_student_by_student_id($db, $original_student_id);
+        if ($record) {
+            return $record;
+        }
+    }
+
     $student_id = trim((string)first_student_value($data, ["StudentID", "student_id"]));
     if ($student_id !== "") {
         $record = find_student_by_student_id($db, $student_id);

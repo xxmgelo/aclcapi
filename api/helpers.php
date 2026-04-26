@@ -34,6 +34,81 @@ function parse_discount_percent($value)
     return round_money($parsed);
 }
 
+function api_date_fields()
+{
+    return [
+        "date_paid",
+        "DatePaid",
+        "downpayment_date",
+        "prelim_date",
+        "midterm_date",
+        "prefinal_date",
+        "final_date",
+        "total_balance_date",
+    ];
+}
+
+function normalize_api_datetime_for_storage($value, $field = "date")
+{
+    if ($value === null || $value === "") {
+        return null;
+    }
+
+    if (!is_string($value)) {
+        respond(["error" => "{$field} must be a valid ISO 8601 date string"], 422);
+    }
+
+    $trimmed = trim($value);
+    $iso_utc_or_offset = "/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+\-]\d{2}:\d{2})$/";
+    if (!preg_match($iso_utc_or_offset, $trimmed)) {
+        respond(["error" => "{$field} must use ISO 8601 format with a timezone"], 422);
+    }
+
+    try {
+        $date = new DateTimeImmutable($trimmed);
+    } catch (Exception $exception) {
+        respond(["error" => "{$field} must be a valid ISO 8601 date string"], 422);
+    }
+
+    return $date->setTimezone(new DateTimeZone("UTC"))->format("Y-m-d H:i:s");
+}
+
+function format_api_datetime($value)
+{
+    if ($value === null || $value === "") {
+        return null;
+    }
+
+    try {
+        $date = new DateTimeImmutable((string)$value, new DateTimeZone("UTC"));
+    } catch (Exception $exception) {
+        return $value;
+    }
+
+    return $date->setTimezone(new DateTimeZone("UTC"))->format("Y-m-d\TH:i:s\Z");
+}
+
+function normalize_payload_date_fields($payload)
+{
+    if (!is_array($payload)) {
+        return $payload;
+    }
+
+    $date_fields = api_date_fields();
+    foreach ($payload as $key => $value) {
+        if (is_array($value)) {
+            $payload[$key] = normalize_payload_date_fields($value);
+            continue;
+        }
+
+        if (in_array($key, $date_fields, true)) {
+            $payload[$key] = normalize_api_datetime_for_storage($value, $key);
+        }
+    }
+
+    return $payload;
+}
+
 function normalize_payment_mode($value)
 {
     $normalized = strtolower(trim((string)$value));
@@ -175,7 +250,7 @@ function read_json()
         exit;
     }
 
-    return $data;
+    return normalize_payload_date_fields($data);
 }
 
 function respond($data, $code = 200)
@@ -208,12 +283,12 @@ function map_student_row($row)
         "PaymentMode" => $financials["payment_mode"],
         "FullPaymentAmount" => $financials["full_payment_amount"],
         "CanRemind" => isset($row["can_remind"]) ? ((int)$row["can_remind"] === 1) : false,
-        "downpayment_date" => $row["downpayment_date"] ?? null,
-        "prelim_date" => $row["prelim_date"] ?? null,
-        "midterm_date" => $row["midterm_date"] ?? null,
-        "prefinal_date" => $row["prefinal_date"] ?? null,
-        "final_date" => $row["final_date"] ?? null,
-        "total_balance_date" => $row["total_balance_date"] ?? null,
+        "downpayment_date" => format_api_datetime($row["downpayment_date"] ?? null),
+        "prelim_date" => format_api_datetime($row["prelim_date"] ?? null),
+        "midterm_date" => format_api_datetime($row["midterm_date"] ?? null),
+        "prefinal_date" => format_api_datetime($row["prefinal_date"] ?? null),
+        "final_date" => format_api_datetime($row["final_date"] ?? null),
+        "total_balance_date" => format_api_datetime($row["total_balance_date"] ?? null),
         "downpayment_paid_amount" => isset($row["downpayment_paid_amount"]) ? (float)$row["downpayment_paid_amount"] : null,
         "prelim_paid_amount" => isset($row["prelim_paid_amount"]) ? (float)$row["prelim_paid_amount"] : null,
         "midterm_paid_amount" => isset($row["midterm_paid_amount"]) ? (float)$row["midterm_paid_amount"] : null,
